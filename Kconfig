@@ -39,3 +39,8 @@ config XEN_VCH
 	bool "Enable Xen vchannels support"
 	help
 	  Enable vchannel communication library.
+
+config XRUN
+	bool "Enable XRUN support"
+	help
+	  Enable xrun suppport which allows to run domains based on the runtime spec.

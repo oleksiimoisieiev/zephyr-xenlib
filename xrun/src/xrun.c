@@ -179,6 +179,8 @@ static int unregister_container_id(const char *container_id)
 	return 0;
 }
 
+const char *test_cmdline = "test=1";
+
 extern char __img_unikraft_start[];
 extern char __img_unikraft_end[];
 extern char __dtb_unikraft_start[];
@@ -203,6 +205,8 @@ void fill_domcfg(struct xen_domain_cfg *domcfg)
 
 	/* domcfg->dtdevs = domd_dtdevs, */
 	domcfg->nr_dtdevs = 0;
+
+	domcfg->cmdline = test_cmdline;
 
 	domcfg->img_start = __img_unikraft_start;
 	domcfg->img_end = __img_unikraft_end;

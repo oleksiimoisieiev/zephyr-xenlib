@@ -341,23 +341,62 @@ int probe_zimage(int domid, uint64_t base_addr, uint64_t image_load_offset,
 	void *mapped_domd;
 	uint64_t mapped_base_pfn;
 	uint64_t dtb_addr;
-	const char *img_start = domcfg->img_start + image_load_offset;
-	const char *img_end = domcfg->img_end;
-	uint64_t domd_size = img_end - img_start;
-	uint64_t nr_pages = ceiling_fraction(domd_size, XEN_PAGE_SIZE);
-	xen_pfn_t mapped_pfns[nr_pages];
-	xen_pfn_t indexes[nr_pages];
-	int err_codes[nr_pages];
+	xen_pfn_t *mapped_pfns;
+	xen_pfn_t *indexes;
+	int *err_codes;
+	uint64_t domd_size = 0;
+	uint64_t nr_pages;
 	char *fdt;
 	size_t fdt_size;
 
 	struct xen_domctl_cacheflush cacheflush;
 
-	struct zimage64_hdr *zhdr = (struct zimage64_hdr *)img_start;
+	struct zimage64_hdr zhdr;
 	uint64_t base_pfn = XEN_PHYS_PFN(base_addr);
+
+	if (!domcfg->load_image_bytes || !domcfg->get_image_size) {
+		printk("Error: Image callback is not set\n");
+		return -EINVAL;
+	}
+
+	rc = domcfg->load_image_bytes(&zhdr, sizeof(zhdr), image_load_offset,
+			   domcfg->image_info);
+	if (rc < 0) {
+		printk("Error calling load_image_bytes rc: %d\n", rc);
+		return rc;
+	}
+
+	rc = domcfg->get_image_size(domcfg->image_info, &domd_size);
+	if (rc < 0 || domd_size == 0) {
+		printk("Error calling get_image_size rc: %d\n", rc);
+		return rc;
+	}
+
+	domd_size -= image_load_offset;
+	nr_pages = ceiling_fraction(domd_size, XEN_PAGE_SIZE);
+
+	mapped_pfns = k_calloc(nr_pages, sizeof(xen_pfn_t));
+	if (!mapped_pfns) {
+		rc = -ENOMEM;
+		goto out_map;
+	}
+
+	indexes = k_calloc(nr_pages, sizeof(xen_pfn_t));
+	if (!indexes) {
+		rc = -ENOMEM;
+		goto out_pfn;
+	}
+
+	err_codes = k_calloc(nr_pages, sizeof(int));
+	if (!err_codes) {
+		rc = -ENOMEM;
+		goto out_ind;
+	}
+
 	LOG_DBG("zImage header info: text_offset = %llx,"
-		   "base_addr = %llx, pages = %llu size = %llu",
-		   zhdr->text_offset, base_addr, nr_pages, nr_pages * XEN_PAGE_SIZE);
+		"base_addr = %llx, pages = %llu size = %llu",
+		zhdr.text_offset, base_addr, nr_pages,
+		nr_pages * XEN_PAGE_SIZE);
 
 	rc = gen_domain_fdt(domcfg, (void **)&fdt, &fdt_size,
 			   XEN_VERSION_MAJOR, XEN_VERSION_MINOR,
@@ -369,7 +408,7 @@ int probe_zimage(int domid, uint64_t base_addr, uint64_t image_load_offset,
 	}
 
 	dtb_addr = get_dtb_addr(base_addr, KB(domcfg->mem_kb), base_addr,
-				 domcfg->img_end - domcfg->img_start, fdt_size);
+				 domd_size, fdt_size);
 	if (!dtb_addr)
 		return -ENOMEM;
 
@@ -398,11 +437,17 @@ int probe_zimage(int domid, uint64_t base_addr, uint64_t image_load_offset,
 	if (rc < 0)
 		goto out;
 
-	LOG_DBG("Zephyr DomD start addr = %p, end addr = %p size = 0x%llx",
-	       img_start, img_end, domd_size);
+	LOG_DBG("Zephyr Domain start addr = %p, binary size = 0x%llx\n",
+	       mapped_domd, domd_size);
 
 	/* Copy binary to domain pages and clear cache */
-	memcpy(mapped_domd, img_start, domd_size);
+	rc = domcfg->load_image_bytes(mapped_domd, domd_size, image_load_offset,
+								  domcfg->image_info);
+	if (rc < 0) {
+		LOG_ERR("Error calling load_image_bytes rc: %d\n", rc);
+		goto out;
+	}
+
 	LOG_DBG("Kernel image is copied");
 
 	cacheflush.start_pfn = mapped_base_pfn;
@@ -427,9 +472,15 @@ int probe_zimage(int domid, uint64_t base_addr, uint64_t image_load_offset,
 		goto out;
 
 	/* .text start address in domU memory */
-	modules->ventry = base_addr + zhdr->text_offset;
+	modules->ventry = base_addr + zhdr.text_offset;
 	rc = 0;
  out:
+	k_free(err_codes);
+ out_ind:
+	k_free(indexes);
+ out_pfn:
+	k_free(mapped_pfns);
+ out_map:
 	k_free(mapped_domd);
 
 	return rc;
@@ -439,10 +490,23 @@ int probe_zimage(int domid, uint64_t base_addr, uint64_t image_load_offset,
 int probe_uimage(int domid, struct xen_domain_cfg *domcfg,
 				 struct modules_address *modules)
 {
+	int rc;
 	uint32_t len;
 	uint64_t base_addr;
 	uint64_t mem_size = KB(domcfg->mem_kb);
-	struct uimage_hdr *uhdr = (struct uimage_hdr *)domcfg->img_start;
+	struct uimage_hdr uhdr;
+
+	if (!domcfg->load_image_bytes) {
+		printk("Error: load_image_bytes callback is not set\n");
+		return -EINVAL;
+	}
+
+	rc = domcfg->load_image_bytes(&uhdr, sizeof(uhdr), 0,
+				 domcfg->image_info);
+	if (rc < 0) {
+		printk("Error calling load_image_bytes rc: %d\n", rc);
+		return rc;
+	}
 
 	/*
 	 * We expect Image to be loaded only in RAM0 Bank
@@ -451,11 +515,11 @@ int probe_uimage(int domid, struct xen_domain_cfg *domcfg,
 	if (mem_size > GUEST_RAM0_SIZE)
 		mem_size = GUEST_RAM0_SIZE;
 
-	if (sys_be32_to_cpu(uhdr->magic_be32) != UIMAGE_MAGIC)
+	if (sys_be32_to_cpu(uhdr.magic_be32) != UIMAGE_MAGIC)
 		return -EINVAL;
 
-	len = sys_be32_to_cpu(uhdr->size_be32);
-	base_addr = sys_be32_to_cpu(uhdr->load_be32);
+	len = sys_be32_to_cpu(uhdr.size_be32);
+	base_addr = sys_be32_to_cpu(uhdr.load_be32);
 	if (base_addr < GUEST_RAM0_BASE ||
 		base_addr > GUEST_RAM0_BASE + mem_size)
 		return -EINVAL;
@@ -463,7 +527,7 @@ int probe_uimage(int domid, struct xen_domain_cfg *domcfg,
 	if (base_addr + len > GUEST_RAM0_BASE + mem_size)
 		return -EINVAL;
 
-	return probe_zimage(domid, base_addr, sizeof(*uhdr), domcfg, modules);
+	return probe_zimage(domid, base_addr, sizeof(uhdr), domcfg, modules);
 }
 
 int load_modules(int domid, struct xen_domain_cfg *domcfg,

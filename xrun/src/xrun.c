@@ -17,6 +17,8 @@
 #include <storage.h>
 #include <xen_dom_mgmt.h>
 
+#define MAX_STR_SIZE 64
+
 #ifndef XRUN_JSON_SIZE_MAX
 #define XRUN_JSON_SIZE_MAX KB(512)
 #endif
@@ -69,6 +71,10 @@ struct container {
 	sys_snode_t node;
 
 	char container_id[CONTAINER_NAME_SIZE];
+	const char *bundle;
+
+	uint8_t devicetree[CONFIG_PARTIAL_DEVICE_TREE_SIZE];
+
 	uint64_t domid;
 	struct domain_spec spec;
 	struct xen_domain_cfg domcfg;
@@ -181,13 +187,45 @@ static int unregister_container_id(const char *container_id)
 
 const char *test_cmdline = "test=1";
 
-extern char __img_unikraft_start[];
-extern char __img_unikraft_end[];
-extern char __dtb_unikraft_start[];
-extern char __dtb_unikraft_end[];
-
-void fill_domcfg(struct xen_domain_cfg *domcfg)
+static int load_image_bytes(uint8_t *buf, size_t bufsize,
+			uint64_t image_load_offset, void *image_info)
 {
+	ssize_t res;
+	struct container *container;
+
+	if (!image_info)
+		return -EINVAL;
+
+	container = (struct container *)image_info;
+
+	res = read_file(container->bundle, container->spec.vm.kernel.path,
+					 buf, bufsize, image_load_offset);
+
+	return (res > 0) ? 0: res;
+}
+
+static ssize_t get_image_size(void *image_info, uint64_t *size)
+{
+	struct container *containter;
+	ssize_t image_size;
+	if (!image_info)
+		return -EINVAL;
+
+	containter = (struct container *)image_info;
+
+	image_size = get_file_size(containter->bundle,
+					containter->spec.vm.kernel.path);
+	if (image_size > 0)
+		*size = image_size;
+
+	return (size == 0) ? -EINVAL : 0;
+}
+
+static int fill_domcfg(struct container *container)
+{
+	ssize_t res;
+	struct xen_domain_cfg *domcfg = &container->domcfg;
+
 	domcfg->mem_kb = 4096;
 	domcfg->flags = (XEN_DOMCTL_CDF_hvm | XEN_DOMCTL_CDF_hap);
 	domcfg->max_evtchns = 10;
@@ -208,33 +246,49 @@ void fill_domcfg(struct xen_domain_cfg *domcfg)
 
 	domcfg->cmdline = test_cmdline;
 
-	domcfg->img_start = __img_unikraft_start;
-	domcfg->img_end = __img_unikraft_end;
+	domcfg->get_image_size = get_image_size;
+	domcfg->load_image_bytes = load_image_bytes;
+	domcfg->image_info = container;
 
-	domcfg->dtb_start = __dtb_unikraft_start;
-	domcfg->dtb_end = __dtb_unikraft_end;
+	res = read_file(container->bundle, container->spec.vm.hwconfig.devicetree,
+					container->devicetree, CONFIG_PARTIAL_DEVICE_TREE_SIZE, 0);
+	if (res < 0) {
+		printk("Unable to read dtb rc: %ld\n", res);
+		return res;
+	}
+
+	domcfg->dtb_start = container->devicetree;
+	domcfg->dtb_end = container->devicetree + res;
+
+	return 0;
 }
 
 int xrun_run(const char *bundle, int console_socket, const char *container_id)
 {
 	int ret = 0;
+	ssize_t bytes_read;
 	char config[XRUN_JSON_SIZE_MAX] = {0};
 	struct container *container = register_container_id(container_id);
 
 	if (!container)
 		return -EINVAL;
 
-	ret = read_file(bundle, "config.json", config, XRUN_JSON_SIZE_MAX);
-	if (ret) {
-		LOG_ERR("Can't read config.json ret = %d\n");
-		return ret;
+	bytes_read = read_file(bundle, "config.json", config,
+					XRUN_JSON_SIZE_MAX, 0);
+	if (bytes_read < 0) {
+		LOG_ERR("Can't read config.json ret = %ld\n", bytes_read);
+		return bytes_read;
 	}
 
-	parse_config_json(config, XRUN_JSON_SIZE_MAX, &container->spec);
+	parse_config_json(config, bytes_read, &container->spec);
+	container->bundle = bundle;
 	container->status = RUNNING;
 	LOG_DBG("xrun_run domid = %lld\n", container->domid);
 
-	fill_domcfg(&container->domcfg);
+	ret = fill_domcfg(container);
+	if (ret) {
+		return ret;
+	}
 
 	ret = domain_create(&container->domcfg, container->domid);
 	if (ret)

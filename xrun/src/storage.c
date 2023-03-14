@@ -12,6 +12,7 @@
 #include <zephyr/storage/flash_map.h>
 
 #include <storage.h>
+#define DEBUG
 #define MAX_PATH_LEN 255
 
 LOG_MODULE_REGISTER(storage);

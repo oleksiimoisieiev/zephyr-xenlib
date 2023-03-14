@@ -14,6 +14,8 @@
 #include <zephyr/sys/slist.h>
 #include <zephyr/xen/public/domctl.h>
 
+#define DEBUG
+
 #include <storage.h>
 #include <xen_dom_mgmt.h>
 
@@ -126,6 +128,18 @@ int parse_config_json(char *json, size_t json_size, struct domain_spec *domain)
 		return ret;
 	}
 
+	LOG_DBG("json_obj_parse return code: %d", ret);
+	LOG_DBG("calculated return code: %d\n", expected_return_code);
+	LOG_DBG("ociVersion: %s\n", domain->ociVersion);
+	LOG_DBG("hyp path %s\n", domain->vm.hypervisor.path);
+	LOG_DBG("hyp params_size %ld\n", domain->vm.hypervisor.params_len);
+	LOG_DBG("hyp params %s\n", domain->vm.hypervisor.parameters[0]);
+
+	LOG_DBG("krn path %s\n", domain->vm.kernel.path);
+	LOG_DBG("krn params_size %ld\n", domain->vm.kernel.params_len);
+	LOG_DBG("krn params %s %s\n", domain->vm.kernel.parameters[0],
+		   domain->vm.kernel.parameters[1]);
+	LOG_DBG("hwconfig path = %s\n", domain->vm.hwconfig.devicetree);
 	return ret;
 }
 
@@ -308,6 +322,7 @@ int xrun_pause(const char *container_id)
 	if (!container)
 		return -EINVAL;
 
+	LOG_DBG("xrun_pause\n");
 	ret = domain_pause(container->domid);
 	if (ret)
 		return ret;
@@ -322,6 +337,8 @@ int xrun_resume(const char *container_id)
 	struct container *container = get_container(container_id);
 	if (!container)
 		return -EINVAL;
+
+	LOG_DBG("xrun_resume\n");
 
 	ret = domain_unpause(container->domid);
 	if (ret)
@@ -338,6 +355,7 @@ int xrun_kill(const char *container_id)
 
 	if (!container)
 		return -EINVAL;
+	LOG_DBG("xrun_kill id = %lld\n", container->domid);
 
 	ret = domain_destroy(container->domid);
 	if (ret)
@@ -353,5 +371,6 @@ int xrun_state(const char *container_id)
 	if (!container)
 		return -EINVAL;
 
+	LOG_DBG("xrun_state\n");
 	return container->status;
 }

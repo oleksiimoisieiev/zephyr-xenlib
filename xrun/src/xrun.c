@@ -251,8 +251,11 @@ static int fill_domcfg(struct container *container)
 
 	/* irqs = domd_irqs, */
 	domcfg->nr_irqs = 0;
-
+#if defined(CONFIG_XENVM_USE_GIC_V3)
+	domcfg->gic_version = XEN_DOMCTL_CONFIG_GIC_V3;
+#else
 	domcfg->gic_version = XEN_DOMCTL_CONFIG_GIC_V2;
+#endif /* CONFIG_XENVM_USE_GIC_V3 */
 	domcfg->tee_type = XEN_DOMCTL_CONFIG_TEE_NONE;
 
 	/* domcfg->dtdevs = domd_dtdevs, */

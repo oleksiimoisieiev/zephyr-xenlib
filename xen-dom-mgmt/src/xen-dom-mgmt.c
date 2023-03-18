@@ -426,6 +426,7 @@ int probe_zimage(int domid, uint64_t base_addr, uint64_t image_load_offset,
 	memset(mapped_domd, 0, XEN_PAGE_SIZE * nr_pages);
 	mapped_base_pfn = XEN_PHYS_PFN((uint64_t)mapped_domd);
 
+	base_pfn = XEN_PHYS_PFN(base_addr + zhdr.text_offset);
 	for (i = 0; i < nr_pages; i++) {
 		mapped_pfns[i] = mapped_base_pfn + i;
 		indexes[i] = base_pfn + i;

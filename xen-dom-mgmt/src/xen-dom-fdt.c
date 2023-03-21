@@ -813,7 +813,7 @@ int gen_domain_fdt(struct xen_domain_cfg *domcfg, void **fdtaddr,
 		  void *pfdt, size_t pfdt_size, int domid)
 {
 	int rc = 0;
-	int fdt_size = CONFIG_PARTIAL_DEVICE_TREE_SIZE;
+	int fdt_size = CONFIG_PARTIAL_DEVICE_TREE_SIZE + pfdt_size;
 
 	if (pfdt)
 		if (check_fdt(pfdt, pfdt_size)) {

@@ -73,6 +73,7 @@ int vch_open(domid_t domain, const char *path, size_t min_rs, size_t min_ws,
 {
 	int rc;
 	grant_ref_t ring_gref;
+	uintptr_t ring_pfn;
 	char xs_key_scratch[MAX_XS_KEY_LEN] = { 0 },
 	     xs_val_scratch[MAX_XS_VAL_LEN] = { 0 };
 
@@ -100,6 +101,10 @@ int vch_open(domid_t domain, const char *path, size_t min_rs, size_t min_ws,
 		return rc;
 	}
 
+	h->ring = k_aligned_alloc(XEN_PAGE_SIZE, XEN_PAGE_SIZE);
+	if (!h->ring)
+		return -ENOMEM;
+
 	memset(h->ring, 0, XEN_PAGE_SIZE);
 
 	rc = alloc_unbound_event_channel(domain);
@@ -113,7 +118,8 @@ int vch_open(domid_t domain, const char *path, size_t min_rs, size_t min_ws,
 		goto free_evtch;
 	}
 
-	rc = gnttab_alloc_and_grant(&h->ring, false);
+	ring_pfn = xen_virt_to_gfn(h->ring);
+	rc = gnttab_grant_access(domain, ring_pfn, false);
 	if (rc < 0) {
 		goto free_evtch;
 	}

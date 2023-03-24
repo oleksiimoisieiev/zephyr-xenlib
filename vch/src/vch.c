@@ -322,8 +322,8 @@ int vch_read(struct vch_handle *h, void *buf, size_t size)
 	chunk = MIN(chunk, size);
 	memcpy((uint8_t *)buf, h->read_cbuf + idx, chunk);
 	memcpy((uint8_t *)buf + chunk, h->read_cbuf, size - chunk);
-	RD_CONS(h) += size;
 	dmb();
+	RD_CONS(h) += size;
 	vch_notify(h, VCHAN_NOTIFY_READ);
 	return size;
 }
@@ -362,8 +362,8 @@ int vch_write(struct vch_handle *h, const void *buf, size_t size)
 	chunk = MIN(chunk, size);
 	memcpy(h->write_cbuf + idx, buf, chunk);
 	memcpy(h->write_cbuf, (uint8_t *)buf + chunk, size - chunk);
-	WR_PROD(h) += size;
 	dmb();
+	WR_PROD(h) += size;
 	vch_notify(h, VCHAN_NOTIFY_WRITE);
 	return size;
 }

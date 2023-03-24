@@ -163,7 +163,11 @@ int vch_open(domid_t domain, const char *path, size_t min_rs, size_t min_ws,
 		goto free_gnt;
 	}
 
-	unmask_event_channel(h->evtch);
+	rc = unmask_event_channel(h->evtch);
+	if (rc) {
+		goto free_gnt;
+	}
+
 	return 0;
 free_gnt:
 	gnttab_end_access(ring_gref);
@@ -255,9 +259,12 @@ int vch_connect(domid_t domain, const char *path, struct vch_handle *h)
 	h->gref = ring_gref;
 	h->ring->cli_live = CLIENT_CONNECTED;
 	h->ring->srv_notify = VCHAN_NOTIFY_WRITE;
-	unmask_event_channel(h->evtch);
-	notify_evtchn(h->evtch);
-	return 0;
+	rc = unmask_event_channel(h->evtch);
+	if (rc) {
+		goto free_evtch;
+	}
+
+	return notify_evtchn(h->evtch);
 free_evtch:
 	unbind_event_channel(h->evtch);
 	return rc;

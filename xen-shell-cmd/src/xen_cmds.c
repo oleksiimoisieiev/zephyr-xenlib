@@ -46,7 +46,8 @@ static int domu_create(const struct shell *shell, int argc, char **argv)
 	 * TODO: this should be changed in app code.
 	 * Not all domains using domd config
 	 */
-	return domain_create(&domd_cfg, domid);
+	/* return domain_create(&domd_cfg, domid); */
+	return -ENOTSUP;
 }
 
 int domu_destroy(const struct shell *shell, size_t argc, char **argv)

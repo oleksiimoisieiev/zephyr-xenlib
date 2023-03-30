@@ -13,7 +13,6 @@
 
 #include <zephyr/xen/events.h>
 #include <zephyr/xen/gnttab.h>
-
 #include "vch.h"
 
 #define RD_PROD(h) ((h)->read->prod)
@@ -63,9 +62,8 @@ static void vch_notify(struct vch_handle *h, int rw)
 	}
 
 	val = __atomic_fetch_and(target, ~rw, __ATOMIC_SEQ_CST);
-	if (val & rw) {
+	/* if (val & rw) */
 		notify_evtchn(h->evtch);
-	}
 }
 
 int vch_open(domid_t domain, const char *path, size_t min_rs, size_t min_ws,
@@ -318,7 +316,9 @@ int vch_read(struct vch_handle *h, void *buf, size_t size)
 
 		if (h->blocking) {
 			vch_wait(h);
-		} else {
+		}
+		else {
+			vch_notify(h, VCHAN_NOTIFY_READ);
 			return 0;
 		}
 	} while (true);
@@ -331,7 +331,9 @@ int vch_read(struct vch_handle *h, void *buf, size_t size)
 	memcpy((uint8_t *)buf + chunk, h->read_cbuf, size - chunk);
 	dmb();
 	RD_CONS(h) += size;
-	vch_notify(h, VCHAN_NOTIFY_READ);
+	dmb();
+	arch_dcache_flush_range(h->read, sizeof(*h->read));
+        vch_notify(h, VCHAN_NOTIFY_READ);
 	return size;
 }
 
@@ -349,6 +351,7 @@ int vch_write(struct vch_handle *h, const void *buf, size_t size)
 	}
 
 	do {
+
 		avail = WR_RING_SZ(h) - (WR_PROD(h) - WR_CONS(h));
 		dmb();
 

@@ -18,7 +18,7 @@
 #include <xen_dom_mgmt.h>
 #include "xrun.h"
 
-#define MAX_STR_SIZE 64
+#define MAX_STR_SIZE 256
 
 LOG_MODULE_REGISTER(xrun);
 

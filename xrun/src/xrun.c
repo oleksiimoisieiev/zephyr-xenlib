@@ -272,7 +272,11 @@ static int fill_domcfg(struct container *container)
 	 * Current implementation doesn't support GIC_NATIVE
 	 * parameter.
 	 */
+#if defined (CONFIG_BOARD_RCAR_SPIDER)
+	domcfg->gic_version = XEN_DOMCTL_CONFIG_GIC_V3;
+#else
 	domcfg->gic_version = XEN_DOMCTL_CONFIG_GIC_V2;
+#endif
 	domcfg->tee_type = XEN_DOMCTL_CONFIG_TEE_NONE;
 
 	/* domcfg->dtdevs = domd_dtdevs, */
